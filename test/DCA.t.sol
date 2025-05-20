@@ -3,179 +3,173 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
 import "../src/DCA.sol";
+import "openzeppelin-contracts/contracts/mocks/ERC20Mock.sol";
 
 /// @notice Helper contract that reverts on any ETH transfer.
 /// Used to test failure cases for withdraw.
 contract RevertingReceiver {
-    // Fallback function reverts on any call with data.
     fallback() external payable {
         revert("fail");
     }
 
-    // Receive function reverts on plain ETH transfer.
     receive() external payable {
         revert("fail");
     }
 }
 
 /// @notice Forge test suite for the DCA contract.
-/// Covers deposit, DCA logic, withdraw, and all revert paths.
+/// Covers deposit, DCA logic, withdraw, parameter updates, and rescue functionality.
 contract DCATest is Test {
-    // Amount to use for DCA investment (USDC 6 decimals)
     uint256 public amountOfInvestment = 500 * 10 ** 6;
+    /// @notice duplicate the event signature so `emit` in test compiles
+
+    event ParametersUpdated(uint256 newAmountOfInvestment, uint256 newInterval);
 
     DCA public dca;
-    // Mainnet USDC and UniswapV2 addresses (useful for mainnet-fork tests)
-    IERC20 public usdcContract =
-        IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
-    IUniswapV2Router public uniswapV2RouterContract =
-        IUniswapV2Router(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
+    IERC20 public usdcContract = IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
+    IUniswapV2Router public uniswapV2RouterContract = IUniswapV2Router(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
 
     address public owner = address(0xABCD);
     address public alice = address(0xDEAD);
 
-    /// @notice Setup runs before each test.
-    /// Funds accounts and deploys the DCA contract.
     function setUp() public {
-        // Fund owner and this contract with Ether
         vm.deal(owner, 10 ether);
         vm.deal(address(this), 10 ether);
-
-        // Deploy DCA contract as owner
         vm.prank(owner);
-        dca = new DCA();
+        dca = new DCA(address(usdcContract), address(uniswapV2RouterContract));
     }
 
-    /// @notice Test that depositFunds works and updates DCA USDC balance.
     function testDepositFunds() public {
-        uint256 amt = 500 * 10 ** 6;
-        // Alice approves and deposits USDC to DCA contract
+        uint256 amt = amountOfInvestment;
         vm.prank(alice);
         usdcContract.approve(address(dca), amt);
         vm.prank(alice);
         dca.depositFunds(amt);
         assertEq(usdcContract.balanceOf(address(dca)), amt);
     }
-    
-    /// @notice Test that performDCA fails if not called by the owner.
-    function testNotOwnerPerformDCA() public {
-        uint256 amt = 500 * 10 ** 6;
 
-        // Alice approves and deposits USDC (allowed for anyone)
+    function testNotOwnerPerformDCA() public {
+        uint256 amt = amountOfInvestment;
         vm.prank(alice);
         usdcContract.approve(address(dca), amt);
         vm.prank(alice);
         dca.depositFunds(amt);
-
-        // Fast-forward 31 days
         vm.warp(block.timestamp + 31 days);
-
-        // Alice tries to perform DCA, should revert with "you are not the owner"
         vm.prank(alice);
-        vm.expectRevert("you are not the owner");
-        // This line will revert.
+        vm.expectRevert("Ownable: caller is not the owner");
         dca.performDCA(1, block.timestamp + 1 hours);
     }
 
-    /// @notice Test DCA performs a swap after 30 days and updates lastInvestment and balances.
-    /// @notice Test owner can perform DCA (should succeed)
     function testPerformDCA() public {
-        // Fund owner with USDC from a whale account (for mainnet-fork tests)
-        // Replace with a real whale address and amount for mainnet testing
-        // Example: 0x55FE002aefF02F77364de339a1292923A15844B8
-        // Example: 500 * 10**6 (500 USDC)
-        address usdcWhale = 0x55FE002aefF02F77364de339a1292923A15844B8; // Example USDC rich account
-        uint256 amt = 500 * 10 ** 6;
-
-        // Impersonate whale to fund owner
-        vm.startPrank(usdcWhale);
+        address usdcWhale = 0x55FE002aefF02F77364de339a1292923A15844B8;
+        uint256 amt = amountOfInvestment;
+        vm.prank(usdcWhale);
         usdcContract.transfer(owner, amt);
-        vm.stopPrank();
-
-        // Owner approves and deposits USDC
         vm.prank(owner);
         usdcContract.approve(address(dca), amt);
         vm.prank(owner);
         dca.depositFunds(amt);
-
-        // Fast-forward 31 days
         vm.warp(block.timestamp + 31 days);
-
-        // Owner performs DCA, should succeed
         vm.prank(owner);
-        // Perform DCA swap
-        uint256 minEth = 1;
-        uint256 deadline = block.timestamp + 1 hours;
-        dca.performDCA(minEth, deadline);
-        // Assert state
-        assertLt(
-            usdcContract.balanceOf(address(dca)),
-            amt,
-            "Swap did not occur"
-        );
+        uint256 preUSDC = usdcContract.balanceOf(address(dca));
+        vm.prank(owner);
+        dca.performDCA(1, block.timestamp + 1 hours);
+        assertLt(usdcContract.balanceOf(address(dca)), preUSDC);
         assertEq(dca.lastInvestment(), block.timestamp);
     }
 
-    /// @notice Test DCA cannot be performed before 30 days have elapsed.
-    function testPerformDCAFailsBefore30Days() public {
+    function testPerformDCAFailsBeforeInterval() public {
+        address usdcWhale = 0x55FE002aefF02F77364de339a1292923A15844B8;
+        uint256 amt = amountOfInvestment;
+        vm.prank(usdcWhale);
+        usdcContract.transfer(owner, amt);
         vm.prank(owner);
-        vm.expectRevert("try again");
+        usdcContract.approve(address(dca), amt);
+        vm.prank(owner);
+        dca.depositFunds(amt);
+        vm.warp(block.timestamp + 31 days);
+        vm.prank(owner);
+        dca.performDCA(1, block.timestamp + 1 hours);
+        vm.prank(owner);
+        vm.expectRevert("Too early");
         dca.performDCA(1, block.timestamp + 1);
     }
 
-    /// @notice Test owner can withdraw ETH and contract balance is updated.
     function testWithdraw() public {
-        // Deposit 1 ETH to DCA contract
         payable(address(dca)).transfer(1 ether);
-
-        // Owner withdraws
         vm.prank(owner);
         dca.withdraw(1 ether);
-
-        // Contract balance should now be 0
         assertEq(address(dca).balance, 0);
     }
 
-    /// @notice Test withdraw fails if called by non-owner.
     function testWithdrawNotOwner() public {
-        // Deposit 1 ETH to DCA contract
         payable(address(dca)).transfer(1 ether);
-        // Alice tries to withdraw, should revert
         vm.prank(alice);
-        vm.expectRevert("you are not the owner");
+        vm.expectRevert("Ownable: caller is not the owner");
         dca.withdraw(1 ether);
     }
 
-    /// @notice Test withdraw fails if contract does not have enough ETH balance.
     function testWithdrawInsufficientBalance() public {
-        // Owner tries to withdraw more than contract balance, should revert
         vm.prank(owner);
-        vm.expectRevert("not enough balance");
+        vm.expectRevert("Insufficient ETH");
         dca.withdraw(1 ether);
     }
 
-    /// @notice Test withdraw fails with "tx failed" if ETH transfer to owner fails.
-    function testWithdraw_RevertsWithTxFailed() public {
-        // Deploy a contract that will revert on receiving ETH
-        RevertingReceiver revertingOwner = new RevertingReceiver();
-
-        // Fund DCA contract with ETH
+    function testWithdraw_RevertsOnTxFail() public {
+        RevertingReceiver receiver = new RevertingReceiver();
         payable(address(dca)).transfer(1 ether);
-
-        // Forcibly set DCA.owner to the reverting contract (first storage slot)
+        // overwrite owner slot
         bytes32 slot = bytes32(uint256(0));
-        vm.store(
-            address(dca),
-            slot,
-            bytes32(uint256(uint160(address(revertingOwner))))
-        );
-
-        // Prank as the new owner and try to withdraw -- should fail with "tx failed"
-        vm.prank(address(revertingOwner));
-        vm.expectRevert(bytes("tx failed"));
+        vm.store(address(dca), slot, bytes32(uint256(uint160(address(receiver)))));
+        vm.prank(address(receiver));
+        vm.expectRevert("Transfer failed");
         dca.withdraw(1 ether);
     }
 
-    /// @notice Allow test contract to receive ETH.
+    function testUpdateParameters() public {
+        vm.prank(owner);
+        vm.expectEmit(true, false, false, true);
+        emit ParametersUpdated(100 * 10 ** 6, 7 days); // step 2: emit signature:contentReference[oaicite:1]{index=1}
+        dca.updateParameters(100 * 10 ** 6, 7 days); // step 3: actual call
+        assertEq(dca.amountOfInvestment(), 100 * 10 ** 6);
+        assertEq(dca.interval(), 7 days);
+    }
+
+    function testRescueTokens() public {
+        // Deploy a dummy token
+        ERC20Mock token = new ERC20Mock("T", "T", address(this), 1000);
+        // Transfer tokens to DCA
+        token.transfer(address(dca), 500);
+        assertEq(token.balanceOf(address(dca)), 500);
+        vm.prank(owner);
+        dca.rescueTokens(address(token), alice, 500);
+        assertEq(token.balanceOf(alice), 500);
+        assertEq(token.balanceOf(address(dca)), 0);
+    }
+
+    function testDepositZeroReverts() public {
+        vm.prank(alice);
+        vm.expectRevert("Amount > 0");
+        dca.depositFunds(0);
+    }
+
+    function testRescueToZeroReverts() public {
+        // mint or transfer some dummy token in setup
+        vm.prank(owner);
+        vm.expectRevert("Invalid recipient");
+        dca.rescueTokens(address(usdcContract), address(0), 1);
+    }
+
+function testUpdateParamsFailZeroAmount() public {
+    vm.prank(owner);
+    vm.expectRevert("Amount > 0");
+    dca.updateParameters(0, 1 days);
+}
+
+function testUpdateParamsFailShortInterval() public {
+    vm.prank(owner);
+    vm.expectRevert("Interval >= 1 day");
+    dca.updateParameters(amountOfInvestment, 0);
+}
     receive() external payable {}
 }
