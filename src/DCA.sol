@@ -110,6 +110,9 @@ contract DCA is Ownable, ReentrancyGuard {
         require(block.timestamp >= lastInvestment + interval, "Too early");
         require(usdc.balanceOf(address(this)) >= amountOfInvestment, "Insufficient USDC");
 
+        lastInvestment = block.timestamp;
+        interval = 30 days;
+
         // Approve and execute swap
         usdc.safeApprove(address(router), amountOfInvestment);
         address[] memory path = new address[](2);
@@ -120,8 +123,6 @@ contract DCA is Ownable, ReentrancyGuard {
         router.swapExactTokensForETH(amountOfInvestment, etherMin, path, address(this), deadline);
         uint256 received = address(this).balance - preBalance;
 
-        lastInvestment = block.timestamp;
-        interval = 30 days;
         emit DCAExecuted(amountOfInvestment, received, block.timestamp);
     }
 
