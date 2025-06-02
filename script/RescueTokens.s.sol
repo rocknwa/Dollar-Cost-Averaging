@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-
+/*
 import "forge-std/Script.sol";
 import "../src/DCA.sol";
 import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
@@ -14,7 +14,7 @@ contract RescueTokens is Script {
         vm.startBroadcast(key);
 
         address raw = vm.envAddress("DCA_ADDRESS");
-        DCA dca = DCA(payable(raw));
+        DollarCostAveraging dca = DollarCostAveraging(payable(raw));
 
         address token = vm.envAddress("TOKEN_TO_RESCUE");
         address to    = vm.envAddress("RESCUE_TO");
@@ -23,4 +23,4 @@ contract RescueTokens is Script {
 
         vm.stopBroadcast();
     }
-}
+}*/

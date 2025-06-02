@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-
+/*
 import "forge-std/Script.sol";
 import "../src/DCA.sol";
 
@@ -10,9 +10,10 @@ contract UpdateParams is Script {
         vm.startBroadcast(key);
 
         address raw = vm.envAddress("DCA_ADDRESS");
-        DCA dca = DCA(payable(raw));
+        DollarCostAveraging dca = DollarCostAveraging(payable(raw));
         dca.updateParameters(100 * 10 ** 6, 7 days);
 
         vm.stopBroadcast();
     }
 }
+*/

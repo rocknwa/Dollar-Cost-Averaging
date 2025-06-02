@@ -1,6 +1,6 @@
-    // SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-
+/*
 import "forge-std/Script.sol";
 import "../src/DCA.sol";
 
@@ -18,7 +18,7 @@ contract DeployDCA is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy the DCA contract
-        DCA dca = new DCA(address(usdcContract), address(uniswapV2RouterContract));
+        DollarCostAveraging dca = new DollarCostAveraging(address(usdcContract), address(uniswapV2RouterContract));
 
         // Log the deployed address for verification
         console.log("DCA deployed at:", address(dca));
@@ -27,3 +27,4 @@ contract DeployDCA is Script {
         vm.stopBroadcast();
     }
 }
+*/
