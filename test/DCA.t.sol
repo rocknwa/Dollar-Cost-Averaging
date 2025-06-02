@@ -269,9 +269,5 @@ contract DCATest is Test {
         dca.depositFunds(amt);
     }
 
-    
-   
     receive() external payable {}
 }
-
- 

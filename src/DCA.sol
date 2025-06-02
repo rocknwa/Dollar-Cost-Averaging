@@ -107,7 +107,7 @@ contract DollarCostAveraging is Ownable, ReentrancyGuard {
             revert InsufficientETHBalance();
         }
 
-        (bool success, ) = owner().call{value: amount}("");
+        (bool success,) = owner().call{value: amount}("");
         if (!success) {
             revert ETHTransferFailed();
         }
